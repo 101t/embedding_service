@@ -1,7 +1,7 @@
 [package]
 name = "embedding_service"
 version = "0.1.0"
-edition = "2021"git remote add origin git@github.com:101t/embedding_service.git
+edition = "2021"
 authors = ["FastEmbed Service Contributors"]
 description = "A fast, local text embedding service using FastEmbed and ONNX Runtime"
 license = "MIT"
