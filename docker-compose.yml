@@ -1,0 +1,34 @@
+services:
+  embedding_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: embedding_service:latest
+    container_name: embedding_service
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8001}:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      - RUST_LOG=${RUST_LOG:-info}
+    volumes:
+      # Persist model cache to avoid re-downloading
+      - fastembed_cache:/app/.fastembed_cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+volumes:
+  fastembed_cache:
+    driver: local
