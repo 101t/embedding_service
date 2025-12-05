@@ -1,8 +1,9 @@
 use actix_cors::Cors;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -63,6 +64,99 @@ pub struct ModelInfoResponse {
     pub max_tokens: usize,
 }
 
+/// Available model entry
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AvailableModel {
+    /// Model identifier to use with EMBEDDING_MODEL env var
+    pub id: &'static str,
+    /// Embedding dimension
+    pub dimension: usize,
+    /// Model description
+    pub description: &'static str,
+}
+
+/// Response containing list of available models
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ModelsListResponse {
+    /// List of available models
+    pub models: Vec<AvailableModel>,
+    /// Total number of models
+    pub count: usize,
+}
+
+/// Model registry entry with all information
+struct ModelEntry {
+    id: &'static str,
+    model: EmbeddingModel,
+    dimension: usize,
+    description: &'static str,
+}
+
+/// Single source of truth for all model configurations
+const MODEL_REGISTRY: &[ModelEntry] = &[
+    // BGE English models
+    ModelEntry { id: "BAAI/bge-small-en-v1.5", model: EmbeddingModel::BGESmallENV15, dimension: 384, description: "Small, fast English model (default)" },
+    ModelEntry { id: "BAAI/bge-base-en-v1.5", model: EmbeddingModel::BGEBaseENV15, dimension: 768, description: "Base English model, balanced performance" },
+    ModelEntry { id: "BAAI/bge-large-en-v1.5", model: EmbeddingModel::BGELargeENV15, dimension: 1024, description: "Large English model, best quality" },
+    // BGE Chinese models
+    ModelEntry { id: "Xenova/bge-small-zh-v1.5", model: EmbeddingModel::BGESmallZHV15, dimension: 512, description: "Small Chinese model" },
+    ModelEntry { id: "Xenova/bge-large-zh-v1.5", model: EmbeddingModel::BGELargeZHV15, dimension: 1024, description: "Large Chinese model" },
+    // MiniLM models
+    ModelEntry { id: "sentence-transformers/all-MiniLM-L6-v2", model: EmbeddingModel::AllMiniLML6V2, dimension: 384, description: "Fast, lightweight English model" },
+    ModelEntry { id: "sentence-transformers/all-MiniLM-L12-v2", model: EmbeddingModel::AllMiniLML12V2, dimension: 384, description: "Slightly larger MiniLM model" },
+    // MPNet models
+    ModelEntry { id: "sentence-transformers/all-mpnet-base-v2", model: EmbeddingModel::AllMpnetBaseV2, dimension: 768, description: "MPNet base model" },
+    // Paraphrase multilingual models
+    ModelEntry { id: "Xenova/paraphrase-multilingual-MiniLM-L12-v2", model: EmbeddingModel::ParaphraseMLMiniLML12V2, dimension: 384, description: "Multilingual paraphrase model" },
+    ModelEntry { id: "Xenova/paraphrase-multilingual-mpnet-base-v2", model: EmbeddingModel::ParaphraseMLMpnetBaseV2, dimension: 768, description: "Multilingual MPNet model" },
+    // Nomic models
+    ModelEntry { id: "nomic-ai/nomic-embed-text-v1", model: EmbeddingModel::NomicEmbedTextV1, dimension: 768, description: "Nomic v1, 8192 context length" },
+    ModelEntry { id: "nomic-ai/nomic-embed-text-v1.5", model: EmbeddingModel::NomicEmbedTextV15, dimension: 768, description: "Nomic v1.5, 8192 context length" },
+    // Multilingual E5 models
+    ModelEntry { id: "intfloat/multilingual-e5-small", model: EmbeddingModel::MultilingualE5Small, dimension: 384, description: "E5 small multilingual" },
+    ModelEntry { id: "intfloat/multilingual-e5-base", model: EmbeddingModel::MultilingualE5Base, dimension: 768, description: "E5 base multilingual" },
+    ModelEntry { id: "intfloat/multilingual-e5-large", model: EmbeddingModel::MultilingualE5Large, dimension: 1024, description: "E5 large multilingual" },
+    // MxBai models
+    ModelEntry { id: "mixedbread-ai/mxbai-embed-large-v1", model: EmbeddingModel::MxbaiEmbedLargeV1, dimension: 1024, description: "MxBai large English model" },
+    // GTE models (Alibaba)
+    ModelEntry { id: "Alibaba-NLP/gte-base-en-v1.5", model: EmbeddingModel::GTEBaseENV15, dimension: 768, description: "GTE base English model" },
+    ModelEntry { id: "Alibaba-NLP/gte-large-en-v1.5", model: EmbeddingModel::GTELargeENV15, dimension: 1024, description: "GTE large English model" },
+    // Other models
+    ModelEntry { id: "lightonai/modernbert-embed-large", model: EmbeddingModel::ModernBertEmbedLarge, dimension: 1024, description: "ModernBERT large model" },
+    ModelEntry { id: "Qdrant/clip-ViT-B-32-text", model: EmbeddingModel::ClipVitB32, dimension: 512, description: "CLIP text encoder ViT-B/32" },
+    ModelEntry { id: "jinaai/jina-embeddings-v2-base-code", model: EmbeddingModel::JinaEmbeddingsV2BaseCode, dimension: 768, description: "Jina code embeddings" },
+    ModelEntry { id: "onnx-community/embeddinggemma-300m-ONNX", model: EmbeddingModel::EmbeddingGemma300M, dimension: 768, description: "Google EmbeddingGemma 300M" },
+];
+
+/// Lazy-initialized HashMap for O(1) model lookup
+static MODEL_MAP: Lazy<HashMap<&'static str, &'static ModelEntry>> = Lazy::new(|| {
+    MODEL_REGISTRY.iter().map(|e| (e.id, e)).collect()
+});
+
+/// Get EmbeddingModel by ID, returns default if not found
+fn get_model_by_id(id: &str) -> EmbeddingModel {
+    MODEL_MAP
+        .get(id)
+        .map(|e| e.model.clone())
+        .unwrap_or_else(|| {
+            log::warn!("Unknown model '{}', using default BGESmallENV15", id);
+            EmbeddingModel::BGESmallENV15
+        })
+}
+
+/// Get available models for API response
+fn get_available_models() -> Vec<AvailableModel> {
+    MODEL_REGISTRY
+        .iter()
+        .map(|e| AvailableModel {
+            id: e.id,
+            dimension: e.dimension,
+            description: e.description,
+        })
+        .collect()
+}
+
+#[derive(Clone)]
 pub struct AppState {
     pub embedder: Arc<RwLock<TextEmbedding>>,
     pub model_name: String,
@@ -83,6 +177,7 @@ pub struct AppState {
         embed_text,
         batch_embed_texts,
         get_model_info,
+        list_available_models,
     ),
     components(schemas(
         EmbedRequest,
@@ -92,6 +187,8 @@ pub struct AppState {
         HealthResponse,
         ErrorResponse,
         ModelInfoResponse,
+        AvailableModel,
+        ModelsListResponse,
     )),
     tags(
         (name = "Health", description = "Health check endpoints"),
@@ -216,6 +313,22 @@ async fn get_model_info(app_state: web::Data<AppState>) -> HttpResponse {
     })
 }
 
+/// List all available embedding models
+#[utoipa::path(
+    get,
+    path = "/api/v1/models",
+    tag = "Info",
+    responses(
+        (status = 200, description = "List of available models", body = ModelsListResponse)
+    )
+)]
+#[get("/models")]
+async fn list_available_models() -> HttpResponse {
+    let models = get_available_models();
+    let count = models.len();
+    HttpResponse::Ok().json(ModelsListResponse { models, count })
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
@@ -226,21 +339,8 @@ async fn main() -> std::io::Result<()> {
     
     log::info!("Loading embedding model: {}", model_name);
     
-    // Initialize FastEmbed model
-    let model = match model_name.as_str() {
-        "BAAI/bge-small-en-v1.5" => EmbeddingModel::BGESmallENV15,
-        "BAAI/bge-base-en-v1.5" => EmbeddingModel::BGEBaseENV15,
-        "BAAI/bge-large-en-v1.5" => EmbeddingModel::BGELargeENV15,
-        "sentence-transformers/all-MiniLM-L6-v2" => EmbeddingModel::AllMiniLML6V2,
-        "sentence-transformers/all-MiniLM-L12-v2" => EmbeddingModel::AllMiniLML12V2,
-        "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q" => EmbeddingModel::ParaphraseMLMiniLML12V2Q,
-        "Xenova/paraphrase-multilingual-MiniLM-L12-v2" => EmbeddingModel::ParaphraseMLMiniLML12V2,
-        "" => EmbeddingModel::BGESmallENV15,
-        _ => {
-            log::warn!("Unknown model '{}', using default BGESmallENV15", model_name);
-            EmbeddingModel::BGESmallENV15
-        }
-    };
+    // Initialize FastEmbed model using registry lookup
+    let model = get_model_by_id(&model_name);
     
     let mut embedder = TextEmbedding::try_new(InitOptions::new(model.clone()))
         .expect("Failed to initialize embedding model");
@@ -283,6 +383,7 @@ async fn main() -> std::io::Result<()> {
                     .service(embed_text)
                     .service(batch_embed_texts)
                     .service(get_model_info)
+                    .service(list_available_models)
             )
             .service(
                 SwaggerUi::new("/docs/{_:.*}")
@@ -292,16 +393,6 @@ async fn main() -> std::io::Result<()> {
     .bind(&bind_addr)?
     .run()
     .await
-}
-
-impl Clone for AppState {
-    fn clone(&self) -> Self {
-        Self {
-            embedder: Arc::clone(&self.embedder),
-            model_name: self.model_name.clone(),
-            dimension: self.dimension,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -369,5 +460,34 @@ mod tests {
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("384"));
         assert!(json.contains("512"));
+    }
+
+    #[test]
+    fn test_model_registry() {
+        assert!(MODEL_REGISTRY.len() >= 22);
+        assert!(MODEL_MAP.contains_key("BAAI/bge-small-en-v1.5"));
+    }
+
+    #[test]
+    fn test_get_model_by_id() {
+        let model = get_model_by_id("BAAI/bge-small-en-v1.5");
+        assert!(matches!(model, EmbeddingModel::BGESmallENV15));
+        
+        // Unknown model should return default
+        let default = get_model_by_id("unknown/model");
+        assert!(matches!(default, EmbeddingModel::BGESmallENV15));
+    }
+
+    #[test]
+    fn test_models_list_response_serialization() {
+        let models = get_available_models();
+        let response = ModelsListResponse {
+            count: models.len(),
+            models,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("models"));
+        assert!(json.contains("count"));
+        assert!(json.contains("BAAI/bge-small-en-v1.5"));
     }
 }

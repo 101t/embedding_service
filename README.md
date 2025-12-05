@@ -96,19 +96,75 @@ curl http://localhost:8001/api/v1/health
 curl http://localhost:8001/api/v1/model
 ```
 
+### List Available Models
+
+```bash
+curl http://localhost:8001/api/v1/models
+```
+
+```json
+{
+  "models": [
+    {"id": "BAAI/bge-small-en-v1.5", "dimension": 384, "description": "Small, fast English model (default)"},
+    ...
+  ],
+  "count": 22
+}
+```
+
 ## 📚 API Documentation
 
 Interactive Swagger UI available at: **http://localhost:8001/docs/**
 
 ## 🤖 Available Models
 
+You can also get the full list via API: `GET /api/v1/models`
+
+### BGE Models (English)
 | Model | Dimension | Description |
 |-------|-----------|-------------|
 | `BAAI/bge-small-en-v1.5` | 384 | Small, fast model **(default)** |
 | `BAAI/bge-base-en-v1.5` | 768 | Balanced performance |
 | `BAAI/bge-large-en-v1.5` | 1024 | Best quality |
-| `sentence-transformers/all-MiniLM-L6-v2` | 384 | Popular lightweight model |
+
+### BGE Models (Chinese)
+| Model | Dimension | Description |
+|-------|-----------|-------------|
+| `Xenova/bge-small-zh-v1.5` | 512 | Small Chinese model |
+| `Xenova/bge-large-zh-v1.5` | 1024 | Large Chinese model |
+
+### MiniLM & MPNet Models
+| Model | Dimension | Description |
+|-------|-----------|-------------|
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 | Fast, lightweight model |
 | `sentence-transformers/all-MiniLM-L12-v2` | 384 | Slightly larger MiniLM |
+| `sentence-transformers/all-mpnet-base-v2` | 768 | MPNet base model |
+
+### Multilingual Models
+| Model | Dimension | Description |
+|-------|-----------|-------------|
+| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | 384 | Multilingual paraphrase |
+| `Xenova/paraphrase-multilingual-mpnet-base-v2` | 768 | Multilingual MPNet |
+| `intfloat/multilingual-e5-small` | 384 | E5 small multilingual |
+| `intfloat/multilingual-e5-base` | 768 | E5 base multilingual |
+| `intfloat/multilingual-e5-large` | 1024 | E5 large multilingual |
+
+### Nomic Models
+| Model | Dimension | Description |
+|-------|-----------|-------------|
+| `nomic-ai/nomic-embed-text-v1` | 768 | 8192 context length |
+| `nomic-ai/nomic-embed-text-v1.5` | 768 | v1.5, 8192 context length |
+
+### Other Models
+| Model | Dimension | Description |
+|-------|-----------|-------------|
+| `mixedbread-ai/mxbai-embed-large-v1` | 1024 | MxBai large English |
+| `Alibaba-NLP/gte-base-en-v1.5` | 768 | GTE base English |
+| `Alibaba-NLP/gte-large-en-v1.5` | 1024 | GTE large English |
+| `lightonai/modernbert-embed-large` | 1024 | ModernBERT large |
+| `Qdrant/clip-ViT-B-32-text` | 512 | CLIP text encoder |
+| `jinaai/jina-embeddings-v2-base-code` | 768 | Code embeddings |
+| `onnx-community/embeddinggemma-300m-ONNX` | 768 | Google EmbeddingGemma |
 
 ## ⚙️ Configuration
 

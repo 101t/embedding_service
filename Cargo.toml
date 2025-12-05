@@ -23,5 +23,6 @@ fastembed = "5.3.1"
 anyhow = "1.0"
 env_logger = "0.11"
 log = "0.4.29"
+once_cell = "1.19"
 utoipa = { version = "5", features = ["actix_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
