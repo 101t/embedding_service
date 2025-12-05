@@ -135,7 +135,7 @@ async fn embed_text(
     req: web::Json<EmbedRequest>,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    let embedder = app_state.embedder.read().await;
+    let mut embedder = app_state.embedder.write().await;
     
     match embedder.embed(vec![req.text.clone()], None) {
         Ok(embeddings) => {
@@ -180,7 +180,7 @@ async fn batch_embed_texts(
         });
     }
     
-    let embedder = app_state.embedder.read().await;
+    let mut embedder = app_state.embedder.write().await;
     
     match embedder.embed(req.texts.clone(), None) {
         Ok(embeddings) => {
@@ -233,13 +233,16 @@ async fn main() -> std::io::Result<()> {
         "BAAI/bge-large-en-v1.5" => EmbeddingModel::BGELargeENV15,
         "sentence-transformers/all-MiniLM-L6-v2" => EmbeddingModel::AllMiniLML6V2,
         "sentence-transformers/all-MiniLM-L12-v2" => EmbeddingModel::AllMiniLML12V2,
+        "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q" => EmbeddingModel::ParaphraseMLMiniLML12V2Q,
+        "Xenova/paraphrase-multilingual-MiniLM-L12-v2" => EmbeddingModel::ParaphraseMLMiniLML12V2,
+        "" => EmbeddingModel::BGESmallENV15,
         _ => {
             log::warn!("Unknown model '{}', using default BGESmallENV15", model_name);
             EmbeddingModel::BGESmallENV15
         }
     };
     
-    let embedder = TextEmbedding::try_new(InitOptions::new(model.clone()))
+    let mut embedder = TextEmbedding::try_new(InitOptions::new(model.clone()))
         .expect("Failed to initialize embedding model");
     
     // Get embedding dimension by running a test embedding
